@@ -2,8 +2,9 @@ Introduction
 ============
 
 :mod:`optimize` is a experimental library designed to parallelize and
-accelerate objective function minimization, similar to the :mod:`scipy.optimze`
-package, using the :mod:`numba` just-in-time compiler.
+accelerate objective function minimization, similar to the :mod:`scipy.optimize`
+package, using the `Numba <https://numba.readthedocs.io/en/stable/>`_
+just-in-time compiler.
 
 
 Installation
