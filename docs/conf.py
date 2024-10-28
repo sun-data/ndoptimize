@@ -19,7 +19,7 @@ os.environ['PYTHONPATH'] = ';'.join((package_path, os.environ.get('PYTHONPATH', 
 
 # -- Project information -----------------------------------------------------
 
-project = 'optimize'
+project = 'ndoptimize'
 copyright = '2024, Roy T. Smart'
 author = 'Roy T. Smart'
 
@@ -71,13 +71,13 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/sun-data/optimize/",
+            "url": "https://github.com/sun-data/ndoptimize/",
             "icon": "fa-brands fa-github",
             "type": "fontawesome",
         },
         {
             "name": "PyPI",
-            "url": "https://pypi.org/project/optimize/",
+            "url": "https://pypi.org/project/ndoptimize/",
             "icon": "fa-brands fa-python",
         },
     ],
