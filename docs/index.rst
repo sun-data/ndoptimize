@@ -1,7 +1,7 @@
 Introduction
 ============
 
-:mod:`ndoptimize` is a experimental library designed to parallelize and
+:mod:`ndoptimize` is an experimental library designed to parallelize and
 accelerate objective function minimization, similar to the :mod:`scipy.optimize`
 package, using the `Numba <https://numba.readthedocs.io/en/stable/>`_
 just-in-time compiler.
