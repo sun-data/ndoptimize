@@ -27,7 +27,6 @@ An in-depth description of the interfaces defined by this package.
     ndoptimize
 
 
-
 Indices and tables
 ==================
 
