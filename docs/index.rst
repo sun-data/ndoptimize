@@ -1,7 +1,7 @@
 Introduction
 ============
 
-:mod:`optimize` is a experimental library designed to parallelize and
+:mod:`ndoptimize` is an experimental library designed to parallelize and
 accelerate objective function minimization, similar to the :mod:`scipy.optimize`
 package, using the `Numba <https://numba.readthedocs.io/en/stable/>`_
 just-in-time compiler.
@@ -9,9 +9,9 @@ just-in-time compiler.
 
 Installation
 ============
-:mod:`optimize` is published on PyPI and can be installed using::
+:mod:`ndoptimize` is published on PyPI and can be installed using::
 
-    pip install optimize
+    pip install ndoptimize
 
 
 API Reference
@@ -24,8 +24,7 @@ An in-depth description of the interfaces defined by this package.
     :template: module_custom.rst
     :recursive:
 
-    optimize
-
+    ndoptimize
 
 
 Indices and tables
