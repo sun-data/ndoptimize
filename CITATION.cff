@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use ndoptimize in your research, please cite it using these metadata."
+type: software
+title: ndoptimize
+abstract: >-
+  Numba-accelerated minimization of objective functions for many independent
+  problems at once, including batched Levenberg-Marquardt least squares with
+  correlated noise, priors and bounds.
+authors:
+  - family-names: Smart
+    given-names: Roy T.
+    orcid: "https://orcid.org/0000-0002-9997-5515"
+repository-code: "https://github.com/sun-data/ndoptimize"
+url: "https://ndoptimize.readthedocs.io"
+license: BSD-3-Clause
+keywords:
+  - nonlinear least squares
+  - Levenberg-Marquardt
+  - curve fitting
+  - spectral line fitting
+  - Numba

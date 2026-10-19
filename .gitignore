@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+
+/build/
+/dist/
+*.egg-info/
+
+docs/_autosummary/
+docs/_build/
+docs/jupyter_execute/
+
+/venv/
+.idea/
+
+.coverage
+coverage.xml

@@ -20,7 +20,7 @@ os.environ['PYTHONPATH'] = ';'.join((package_path, os.environ.get('PYTHONPATH', 
 # -- Project information -----------------------------------------------------
 
 project = 'ndoptimize'
-copyright = '2024, Roy T. Smart'
+copyright = '2024-2026, Roy T. Smart'
 author = 'Roy T. Smart'
 
 # -- General configuration ---------------------------------------------------
