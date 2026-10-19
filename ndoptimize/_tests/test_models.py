@@ -1,8 +1,10 @@
-from typing import Callable
+from typing import Any, Callable
 import copy
+import math
 import pickle
 import numpy as np
 import pytest
+import scipy.integrate
 import ndoptimize
 
 
@@ -139,3 +141,113 @@ def test_model_reference() -> None:
     assert copy.copy(model) is model
     assert copy.deepcopy(model) is model
     assert pickle.loads(pickle.dumps(model)) is model
+
+
+_edges = np.array(
+    [
+        [-160.0, -150.0],
+        [-50.0, -40.0],
+        [-12.0, -2.0],
+        [-3.0, 8.0],
+        [2.0, 3.0],
+        [20.0, 35.0],
+        [150.0, 160.0],
+    ]
+)
+"""
+Bins in both tails, far enough out that the difference of the error functions
+cancels, on either side of the center, and across it.
+"""
+
+
+def _gaussian_scalar(v: float, a: float, c: float, w: float) -> float:
+    """A Gaussian at a single point, for numerical integration."""
+    return a * math.exp(-0.5 * ((v - c) / w) ** 2)
+
+
+def test_gaussian_binned() -> None:
+    """
+    The binned Gaussian is the average of the Gaussian over each bin, to full
+    precision even far in the tails, and its Jacobian is its derivative.
+    """
+    model = ndoptimize.models.gaussian_binned
+    parameters = np.array([2.0, 3.0, 10.0])
+    f = np.empty(len(_edges))
+    jacobian = np.empty((len(_edges), 3))
+
+    model(_edges, parameters, f, jacobian)
+
+    expected = np.array(
+        [
+            scipy.integrate.quad(
+                _gaussian_scalar,
+                lower,
+                upper,
+                args=tuple(parameters),
+                epsabs=0,
+                epsrel=1e-13,
+            )[0]
+            / (upper - lower)
+            for lower, upper in _edges
+        ]
+    )
+    assert np.all(expected[[0, -1]] < 1e-40)
+    assert np.allclose(f, expected, rtol=1e-11, atol=0)
+
+    step = 1e-6
+    for k in range(parameters.size):
+        dp = np.zeros(parameters.size)
+        dp[k] = step
+        f_plus, f_minus = np.empty(len(_edges)), np.empty(len(_edges))
+        model(_edges, parameters + dp, f_plus, np.empty((len(_edges), 3)))
+        model(_edges, parameters - dp, f_minus, np.empty((len(_edges), 3)))
+        derivative = (f_plus - f_minus) / (2 * step)
+        assert np.allclose(jacobian[:, k], derivative, rtol=1e-5, atol=1e-10)
+
+
+def test_gaussian_binned_narrow() -> None:
+    """A bin of zero width gives the Gaussian at that point, and narrow bins
+    approach it."""
+    parameters = np.array([2.0, 3.0, 10.0])
+    v = np.array([-7.0, 3.0, 15.0])
+
+    f = np.empty(v.size)
+    jacobian = np.empty((v.size, 3))
+    ndoptimize.models.gaussian(v[:, np.newaxis], parameters, f, jacobian)
+
+    for size in (0, 1e-6):
+        x = np.stack([v - size / 2, v + size / 2], axis=-1)
+        f_binned = np.empty(v.size)
+        jacobian_binned = np.empty((v.size, 3))
+        ndoptimize.models.gaussian_binned(x, parameters, f_binned, jacobian_binned)
+        assert np.allclose(f_binned, f, rtol=1e-9)
+        assert np.allclose(jacobian_binned, jacobian, rtol=1e-6, atol=1e-12)
+
+
+def test_gaussian_binned_fit() -> None:
+    """
+    Fitting the binned Gaussian to the averages of a line over bins as wide as
+    the line recovers the line, while fitting the Gaussian at the centers of
+    the bins overestimates its width.
+    """
+    truth = np.array([5.0, 2.0, 10.0])
+    edges = np.linspace(-60, 60, 13)
+    x = np.stack([edges[:-1], edges[1:]], axis=-1)
+    data = np.empty(len(x))
+    ndoptimize.models.gaussian_binned(x, truth, data, np.empty((len(x), 3)))
+
+    kwargs: dict[str, Any] = dict(data=data, variance=1e-4, guess=[4, 0, 8])
+    result = ndoptimize.least_squares(
+        model=ndoptimize.models.gaussian_binned,
+        x=x,
+        **kwargs,
+    )
+    assert result.converged
+    assert np.allclose(result.parameters, truth, rtol=1e-6)
+
+    result_sampled = ndoptimize.least_squares(
+        model=ndoptimize.models.gaussian,
+        x=x.mean(axis=-1, keepdims=True),
+        **kwargs,
+    )
+    assert result_sampled.parameters[2] > 1.02 * truth[2]

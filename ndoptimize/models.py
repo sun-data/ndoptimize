@@ -8,6 +8,7 @@ from . import _model
 
 __all__ = [
     "gaussian",
+    "gaussian_binned",
     "gaussian_linear",
     "two_gaussians_linear",
 ]
@@ -52,6 +53,120 @@ def gaussian(
         jacobian[i, 0] = e
         jacobian[i, 1] = amplitude * e * z / width
         jacobian[i, 2] = amplitude * e * z * z / width
+
+
+@_model.model(
+    parameters=("amplitude", "center", "width"),
+)
+def gaussian_binned(
+    x: np.ndarray,
+    parameters: np.ndarray,
+    f: np.ndarray,
+    jacobian: np.ndarray,
+) -> None:
+    r"""
+    A Gaussian averaged over each bin,
+
+    .. math::
+
+        f(x_0, x_1) = \frac{1}{x_1 - x_0} \int_{x_0}^{x_1}
+            A \exp \left( -\frac{(x - \mu)^2}{2 \sigma^2} \right) dx
+            = \sqrt{\frac{\pi}{2}} \frac{A \sigma}{x_1 - x_0} \left[
+                \text{erf} \left( \frac{x_1 - \mu}{\sqrt{2} \sigma} \right)
+                - \text{erf} \left( \frac{x_0 - \mu}{\sqrt{2} \sigma} \right)
+            \right],
+
+    with the same parameters as :func:`gaussian`, the amplitude, center and
+    width, where :math:`x_0` and :math:`x_1`, the first two components of
+    :math:`x`, are the edges of each bin.
+    The integral of the Gaussian is :math:`\sqrt{2 \pi} A \sigma`.
+
+    Averaging matters when the bins are not much narrower than the line.
+    Averaging over bins of width :math:`\Delta` broadens a Gaussian by about
+    :math:`\Delta^2 / 12` in variance, which a fit of :func:`gaussian` at the
+    centers of the bins would take as part of the width of the line.
+    A bin of zero width gives the Gaussian at that point.
+
+    Parameters
+    ----------
+    x
+        The edges of each bin, ``(num_points, num_inputs)``, with the lower
+        edge in the first column and the upper edge in the second.
+    parameters
+        The amplitude, center, and width.
+    f
+        The output array for the model, ``(num_points,)``.
+    jacobian
+        The output array for the derivatives of the model with respect to
+        the parameters, ``(num_points, 3)``.
+
+    Examples
+    --------
+
+    A Gaussian averaged over bins as wide as the line, compared to the
+    Gaussian itself.
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import ndoptimize
+
+        parameters = np.array([1.0, 3.0, 10.0])  # amplitude, center and width
+
+        # the Gaussian
+        v = np.linspace(-50, 50, 201)
+        f = np.empty(v.size)
+        ndoptimize.models.gaussian(v[:, np.newaxis], parameters, f, np.empty((v.size, 3)))
+
+        # its average over each bin
+        edges = np.linspace(-50, 50, 11)
+        x = np.stack([edges[:-1], edges[1:]], axis=-1)
+        f_binned = np.empty(len(x))
+        ndoptimize.models.gaussian_binned(x, parameters, f_binned, np.empty((len(x), 3)))
+
+        fig, ax = plt.subplots(constrained_layout=True)
+        ax.plot(v, f, label="gaussian");
+        ax.stairs(f_binned, edges, label="gaussian_binned");
+        ax.legend();
+    """
+    amplitude, center, width = parameters[0], parameters[1], parameters[2]
+    scale = math.sqrt(2) * width
+    for i in range(x.shape[0]):
+        lower = x[i, 0]
+        upper = x[i, 1]
+        size = upper - lower
+        if size == 0:
+            # the limit of a narrow bin, the Gaussian at that point
+            z = (lower - center) / width
+            e = math.exp(-0.5 * z * z)
+            f[i] = amplitude * e
+            jacobian[i, 0] = e
+            jacobian[i, 1] = amplitude * e * z / width
+            jacobian[i, 2] = amplitude * e * z * z / width
+            continue
+        a = (lower - center) / scale
+        b = (upper - center) / scale
+        # in a tail, where both error functions are close to 1 or to -1,
+        # their difference comes from the complementary error functions
+        # without cancellation
+        if a > 0 and b > 0:
+            difference = math.erfc(a) - math.erfc(b)
+        elif a < 0 and b < 0:
+            difference = math.erfc(-b) - math.erfc(-a)
+        else:
+            difference = math.erf(b) - math.erf(a)
+        e_a = math.exp(-a * a)
+        e_b = math.exp(-b * b)
+        factor = math.sqrt(math.pi / 2) * width / size
+        f[i] = amplitude * factor * difference
+        jacobian[i, 0] = factor * difference
+        jacobian[i, 1] = amplitude * (e_a - e_b) / size
+        jacobian[i, 2] = (
+            amplitude
+            * (math.sqrt(math.pi / 2) * difference + math.sqrt(2) * (a * e_a - b * e_b))
+            / size
+        )
 
 
 @_model.model(
