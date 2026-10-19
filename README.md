@@ -7,6 +7,7 @@
 [![Ruff](https://github.com/sun-data/ndoptimize/actions/workflows/ruff.yml/badge.svg)](https://github.com/sun-data/ndoptimize/actions/workflows/ruff.yml)
 [![Documentation Status](https://readthedocs.org/projects/ndoptimize/badge/?version=latest)](https://ndoptimize.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/ndoptimize.svg)](https://badge.fury.io/py/ndoptimize)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23484609.svg)](https://doi.org/10.5281/zenodo.23484609)
 
 `ndoptimize` minimizes objective functions for many independent problems at
 once, similar to
@@ -167,14 +168,23 @@ Gaussian plus a straight line, and two Gaussians plus a straight line.
 If you use ndoptimize in your research, please cite it.
 The citation metadata is kept in [`CITATION.cff`](https://github.com/sun-data/ndoptimize/blob/main/CITATION.cff),
 which the "Cite this repository" button on GitHub can export as BibTeX or APA.
+
+Every release of ndoptimize is archived on Zenodo with its own DOI.
+The concept DOI, [10.5281/zenodo.23484609](https://doi.org/10.5281/zenodo.23484609),
+always resolves to the latest version,
+and the Zenodo page lists the DOI of every version.
 Please include the version of ndoptimize that you used,
 which is given by `importlib.metadata.version("ndoptimize")`.
+The BibTeX entry below uses the concept DOI.
+To cite a specific version instead,
+replace `doi` with the DOI of that version.
 
 ```bibtex
 @software{ndoptimize,
   author = {Smart, Roy T.},
   title = {ndoptimize},
   version = {X.Y.Z},
+  doi = {10.5281/zenodo.23484609},
   url = {https://github.com/sun-data/ndoptimize},
 }
 ```
