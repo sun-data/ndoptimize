@@ -36,8 +36,9 @@ The package provides:
   parameters at once, such as the best-fit ones.
 - :func:`ndoptimize.model`, a decorator which compiles a function as a model,
   an :class:`ndoptimize.Model`, and names its parameters.
-- :mod:`ndoptimize.models`, some common models: a Gaussian, a Gaussian plus a
-  straight line, and two Gaussians plus a straight line.
+- :mod:`ndoptimize.models`, some common models: a Gaussian, a Gaussian
+  averaged over each bin, a Gaussian plus a straight line, and two Gaussians
+  plus a straight line.
 
 
 Differences from :func:`scipy.optimize.least_squares`
