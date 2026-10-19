@@ -19,7 +19,9 @@ fits per second on a 48-thread machine.
 Models are short Numba functions which compute the model and its Jacobian,
 compiled with the :func:`ndoptimize.model` decorator, which also names their
 parameters.
-Some common ones are provided in :mod:`ndoptimize.models`.
+Some common ones are provided in :mod:`ndoptimize.models`, and
+:func:`ndoptimize.evaluate` evaluates a model for many sets of parameters at
+once, such as the best-fit ones.
 
 
 Installation

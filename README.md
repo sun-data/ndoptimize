@@ -57,6 +57,13 @@ result = ndoptimize.least_squares(
 
 result.parameters  # shape (..., 5)
 result.covariance  # shape (..., 5, 5)
+
+# the best-fit model at each point of each spectrum, shape (..., 41)
+fit = ndoptimize.evaluate(
+    model=ndoptimize.models.gaussian_linear,
+    x=velocity[:, np.newaxis],
+    parameters=result.parameters,
+)
 ```
 
 Models are short Numba functions which compute the model and its Jacobian,
