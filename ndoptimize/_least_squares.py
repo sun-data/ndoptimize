@@ -342,7 +342,8 @@ def _levenberg_marquardt(
     max_iterations
         The maximum number of steps per fit, not negative.
     tolerance
-        The Newton decrement below which a fit has converged.
+        The predicted decrease in chi-squared below which a fit has
+        converged.
     num_threads
         The number of chunks to split the fits into, the result of
         :func:`numba.get_num_threads`, which disables caching if it is called
@@ -440,9 +441,9 @@ def _levenberg_marquardt(
                     at_upper = p[k] >= upper[i, k] and g[k] > 0
                     free[k] = a[k, k] != 0 and not (at_lower or at_upper)
 
-                # the Newton decrement of the free parameters, the decrease
-                # in chi-squared a Gauss-Newton step would give if the model
-                # were linear
+                # the decrease in chi-squared that a Gauss-Newton step of the
+                # free parameters predicts, half the square of the Newton
+                # decrement
                 for k in range(num_parameter):
                     rhs[k] = g[k] if free[k] else 0
                     for q in range(num_parameter):
@@ -576,7 +577,7 @@ class LeastSquaresResult:
     """The number of data points used by each fit."""
 
     iterations: np.ndarray
-    """The number of steps taken by each fit."""
+    """The number of accepted steps taken by each fit."""
 
     converged: np.ndarray
     """Whether each fit converged."""
@@ -756,13 +757,16 @@ def least_squares(
         It must describe a positive-definite noise covariance.
         If :obj:`None` (the default), the noise is uncorrelated.
     max_iterations
-        The maximum number of steps for each fit.
+        The maximum number of accepted steps for each fit.
+        A step which does not decrease :math:`\chi^2` is retried with more
+        damping, which evaluates the model again without counting as a step.
     tolerance
-        The convergence tolerance on the Newton decrement,
-        :math:`g^T A^{-1} g`, where :math:`g = J^T C^{-1} r` is the gradient
-        and :math:`A = J^T C^{-1} J` is the normal matrix, which is the
-        decrease in :math:`\chi^2` a Gauss-Newton step would give if the
-        model were linear.
+        The convergence tolerance on :math:`g^T A^{-1} g`, the decrease in
+        :math:`\chi^2` that a Gauss-Newton step predicts, where
+        :math:`g = J^T C^{-1} r` is minus half the gradient of
+        :math:`\chi^2` and :math:`A = J^T C^{-1} J` is the normal matrix,
+        both including the priors.
+        This is half the square of the Newton decrement of :math:`\chi^2`.
         The default, :math:`10^{-8}`, puts each parameter within about
         :math:`10^{-4}` of its uncertainty of the minimum.
 
