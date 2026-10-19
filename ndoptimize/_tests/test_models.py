@@ -1,4 +1,6 @@
 from typing import Callable
+import copy
+import pickle
 import numpy as np
 import pytest
 import ndoptimize
@@ -129,3 +131,11 @@ def test_model_uncached() -> None:
 
     assert np.array_equal(f, 2 * x[:, 0])
     assert np.array_equal(jacobian, x)
+
+
+def test_model_reference() -> None:
+    """A model is copied and pickled by reference, like a function."""
+    model = ndoptimize.models.gaussian
+    assert copy.copy(model) is model
+    assert copy.deepcopy(model) is model
+    assert pickle.loads(pickle.dumps(model)) is model

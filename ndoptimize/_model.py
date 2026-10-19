@@ -70,6 +70,14 @@ class Model:
         """
         return self
 
+    def __reduce__(self) -> str:
+        """
+        Pickle and copy this model by reference, like a function: a copy is
+        this model itself, and a pickled model is the one of the same name in
+        its module when it is unpickled.
+        """
+        return self.function.__qualname__
+
     def __call__(
         self,
         x: np.ndarray,
