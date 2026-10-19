@@ -29,8 +29,9 @@ Compared to calling `scipy.optimize.least_squares()` in a loop, it offers:
 - **Priors and bounds.** Each parameter of each fit may have a Gaussian prior
   and bounds, to keep faint fits stable.
 - **Missing data.** Data points which are NaN are left out of their fit.
-- **Broadcasting.** The data, noise, initial guess, bounds and priors are
-  broadcast against each other, so each fit can have its own.
+- **Broadcasting.** The independent variable, data, noise variance, initial
+  guess, bounds and priors are broadcast against each other, so each fit can
+  have its own. The correlation of the noise is shared by every fit.
 - **Custom models.** A model is a short Numba function which computes its
   values and their derivatives. Every model shares the same fitting kernel,
   which is compiled once and cached on disk.
@@ -51,9 +52,16 @@ standard deviation in the tests, but they differ in the following ways.
   gradient pushes against its bound is held fixed for that step. SciPy's
   `"lm"` method does not support bounds, and its `"trf"` and `"dogbox"`
   methods handle them with trust regions.
-- **Convergence.** A single tolerance on the Newton decrement, the decrease in
-  chi-squared that a Gauss-Newton step would give, replaces `ftol`, `xtol`
-  and `gtol`.
+- **Convergence.** A single tolerance on the decrease in chi-squared that a
+  Gauss-Newton step predicts replaces `ftol`, `xtol` and `gtol`.
+- **Model arguments.** A model takes only the points `x` and the parameters,
+  so any other data it needs, such as the edges of each bin, goes in more
+  columns of `x`. SciPy passes extra data through `args` and `kwargs`.
+- **Results.** `chi2` is the sum of the squares of the whitened residuals,
+  without the priors, while SciPy's `cost` is half the sum of the squares of
+  whatever residual it is given. `max_iterations` and `iterations` count
+  accepted steps, while SciPy's `max_nfev` and `nfev` count evaluations of
+  the residual.
 - **Not supported:** robust loss functions and sparse Jacobians.
 
 The full documentation is hosted on
@@ -81,9 +89,9 @@ rng = np.random.default_rng(0)
 # a thousand noisy Gaussian lines with random centers
 velocity = np.linspace(-100, 100, 41)
 center = rng.normal(0, 10, size=(1000, 1))
-sigma = 0.5
+noise = 0.5
 data = 5 * np.exp(-np.square((velocity - center) / 15) / 2)
-data = data + rng.normal(0, sigma, size=data.shape)
+data = data + rng.normal(0, noise, size=data.shape)
 
 # start each fit at the peak of its line
 guess = np.stack([
@@ -95,9 +103,9 @@ guess = np.stack([
 # fit every line at once
 result = ndoptimize.least_squares(
     model=ndoptimize.models.gaussian,
-    x=velocity[:, np.newaxis],
+    x=velocity[:, np.newaxis],  # shape (num_points, num_inputs)
     data=data,
-    variance=sigma**2,
+    variance=noise**2,
     guess=guess,
 )
 
@@ -113,16 +121,21 @@ fit = ndoptimize.evaluate(
 )
 ```
 
+The documentation plots three of the lines with their fits:
+
 ![quickstart](https://ndoptimize.readthedocs.io/en/latest/_images/index_0_0.png)
 
 ## Writing a model
 
-A model is a function of the points `x`, an array of shape
-`(num_points, num_inputs)`, and the `parameters`, which writes the model into
-`f` and its derivatives with respect to the parameters into `jacobian`.
+A model is a function, `model(x, parameters, f, jacobian)`, which writes its
+value at the points `x`, an array of shape `(num_points, num_inputs)`, into
+`f`, and its derivatives with respect to the `parameters` into `jacobian`.
 The
 [`ndoptimize.model`](https://ndoptimize.readthedocs.io/en/latest/_autosummary/ndoptimize.model-decorator.html)
 decorator compiles it and names its parameters.
+The compiled model is cached on disk, so define it in a file or a notebook.
+A model defined in the interactive interpreter needs
+`@ndoptimize.model(..., cache=False)`.
 
 ```python
 import math
@@ -145,8 +158,6 @@ def exponential(
         jacobian[i, 1] = amplitude * e * x[i, 0] / scale**2
 ```
 
-The compiled model is cached on disk, so a model defined in the interactive
-interpreter, rather than in a file or a notebook, needs `cache=False`.
 [`ndoptimize.models`](https://ndoptimize.readthedocs.io/en/latest/_autosummary/ndoptimize.models.html)
 has some common models: a Gaussian, a Gaussian plus a straight line, and two
 Gaussians plus a straight line.
