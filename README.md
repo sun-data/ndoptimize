@@ -1,6 +1,7 @@
 # ndoptimize
 
 [![tests](https://github.com/sun-data/ndoptimize/actions/workflows/tests.yml/badge.svg)](https://github.com/sun-data/ndoptimize/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/sun-data/ndoptimize/graph/badge.svg)](https://codecov.io/gh/sun-data/ndoptimize)
 [![typing](https://github.com/sun-data/ndoptimize/actions/workflows/typing.yml/badge.svg)](https://github.com/sun-data/ndoptimize/actions/workflows/typing.yml)
 [![Black](https://github.com/sun-data/ndoptimize/actions/workflows/black.yml/badge.svg)](https://github.com/sun-data/ndoptimize/actions/workflows/black.yml)
 [![Ruff](https://github.com/sun-data/ndoptimize/actions/workflows/ruff.yml/badge.svg)](https://github.com/sun-data/ndoptimize/actions/workflows/ruff.yml)
