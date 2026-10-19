@@ -217,8 +217,17 @@ The citation metadata is kept in
 which the "Cite this repository" button on the
 `GitHub page <https://github.com/sun-data/ndoptimize>`_
 can export as BibTeX or APA.
+
+Every release of :mod:`ndoptimize` is archived on Zenodo with its own DOI.
+The concept DOI,
+`10.5281/zenodo.23484609 <https://doi.org/10.5281/zenodo.23484609>`_,
+always resolves to the latest version,
+and the Zenodo page lists the DOI of every version.
 Please include the version of :mod:`ndoptimize` that you used,
 which is given by ``importlib.metadata.version("ndoptimize")``.
+The BibTeX entry below uses the concept DOI.
+To cite a specific version instead,
+replace ``doi`` with the DOI of that version.
 
 .. code-block:: bibtex
 
@@ -226,6 +235,7 @@ which is given by ``importlib.metadata.version("ndoptimize")``.
       author = {Smart, Roy T.},
       title = {ndoptimize},
       version = {X.Y.Z},
+      doi = {10.5281/zenodo.23484609},
       url = {https://github.com/sun-data/ndoptimize},
     }
 
