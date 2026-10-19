@@ -60,6 +60,7 @@ result.covariance  # shape (..., 5, 5)
 ```
 
 Models are short Numba functions which compute the model and its Jacobian,
-compiled with the `ndoptimize.model` decorator.
+compiled with the `ndoptimize.model` decorator, which also names their
+parameters.
 See the [documentation](https://ndoptimize.readthedocs.io/en/latest) for
 details.

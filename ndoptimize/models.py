@@ -1,5 +1,5 @@
 """
-Common model functions, compiled with :func:`ndoptimize.model`.
+Common models, made with :func:`ndoptimize.model`.
 """
 
 import math
@@ -13,7 +13,9 @@ __all__ = [
 ]
 
 
-@_model.model
+@_model.model(
+    parameters=("amplitude", "center", "width"),
+)
 def gaussian(
     x: np.ndarray,
     parameters: np.ndarray,
@@ -52,7 +54,9 @@ def gaussian(
         jacobian[i, 2] = amplitude * e * z * z / width
 
 
-@_model.model
+@_model.model(
+    parameters=("amplitude", "center", "width", "slope", "intercept"),
+)
 def gaussian_linear(
     x: np.ndarray,
     parameters: np.ndarray,
@@ -96,7 +100,18 @@ def gaussian_linear(
         jacobian[i, 4] = 1
 
 
-@_model.model
+@_model.model(
+    parameters=(
+        "amplitude",
+        "center",
+        "width",
+        "slope",
+        "intercept",
+        "amplitude_2",
+        "center_2",
+        "width_2",
+    ),
+)
 def two_gaussians_linear(
     x: np.ndarray,
     parameters: np.ndarray,

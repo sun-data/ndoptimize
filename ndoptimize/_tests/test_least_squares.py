@@ -22,7 +22,7 @@ def _noise_covariance(sigma: np.ndarray, correlation: None | np.ndarray) -> np.n
     return sigma[:, np.newaxis] * rho[lag] * sigma
 
 
-def _evaluate(model: ndoptimize._model.Model, parameters: np.ndarray) -> np.ndarray:
+def _evaluate(model: ndoptimize.Model, parameters: np.ndarray) -> np.ndarray:
     """The model at the test velocities for each row of `parameters`."""
     x = _velocity[:, np.newaxis]
     result = np.empty((len(parameters), _velocity.size))
@@ -232,6 +232,13 @@ def test_least_squares_broadcasting() -> None:
         assert getattr(result, name).shape == (2, 3)
     assert np.array_equal(result.parameters.reshape(6, 5), result_flat.parameters)
 
+    # an argument broadcast over only some of the batch axes
+    kwargs["guess"] = guess[:3]
+    result_partial = ndoptimize.least_squares(data=data.reshape(2, 3, -1), **kwargs)
+    kwargs["guess"] = np.broadcast_to(guess[:3], (2, 3, 5)).copy()
+    result_full = ndoptimize.least_squares(data=data.reshape(2, 3, -1), **kwargs)
+    assert np.array_equal(result_partial.parameters, result_full.parameters)
+
 
 def test_least_squares_missing() -> None:
     truth, data, variance, guess = _spectra(3, None, missing=0)
@@ -277,7 +284,7 @@ def test_least_squares_unconstrained() -> None:
     assert np.isfinite(result.covariance[0, 0])
 
 
-@ndoptimize.model
+@ndoptimize.model(parameters=("intercept", "slope"))
 def _line(
     x: np.ndarray,
     parameters: np.ndarray,
@@ -315,6 +322,91 @@ def test_least_squares_linear() -> None:
     assert np.allclose(result.covariance, covariance, rtol=1e-10)
     assert result.converged
     assert result.iterations <= 3
+
+
+@ndoptimize.model(parameters=("scale",))
+def _scaled(
+    x: np.ndarray,
+    parameters: np.ndarray,
+    f: np.ndarray,
+    jacobian: np.ndarray,
+) -> None:
+    """A multiple of the input."""
+    for i in range(x.shape[0]):
+        f[i] = parameters[0] * x[i, 0]
+        jacobian[i, 0] = x[i, 0]
+
+
+def test_least_squares_scale() -> None:
+    """A parameter of a very different scale than the data, like an emission
+    measure times a temperature response, converges to the minimum."""
+    rng = np.random.default_rng(3)
+    response = 1e-27 * np.exp(-0.5 * np.linspace(-3, 3, 39) ** 2)
+    variance = 0.01
+    data = 3e27 * response + rng.normal(0, np.sqrt(variance), response.size)
+
+    result = ndoptimize.least_squares(
+        model=_scaled,
+        x=response[:, np.newaxis],
+        data=data,
+        variance=variance,
+        guess=[2e27],
+    )
+
+    information = response @ response / variance
+    expected = response @ data / variance / information
+    sigma = 1 / np.sqrt(information)
+    assert result.converged
+    assert np.abs(result.parameters[0] - expected) < 1e-4 * sigma
+    assert np.allclose(result.covariance, 1 / information, rtol=1e-10)
+
+
+def test_least_squares_degenerate() -> None:
+    """A fit with fewer usable points than parameters has a NaN covariance."""
+    result = ndoptimize.least_squares(
+        model=_line,
+        x=np.array([[1.0], [2.0]]),
+        data=np.array([3.0, np.nan]),
+        variance=1,
+        guess=np.zeros(2),
+    )
+    assert result.num_points == 1
+    assert np.allclose(result.parameters @ [1, 1], 3)
+    assert np.all(np.isnan(result.covariance))
+
+
+def test_least_squares_nan() -> None:
+    """A fit whose model is NaN at the initial guess takes no steps."""
+    truth, data, variance, guess = _spectra(1, None)
+    result = ndoptimize.least_squares(
+        model=ndoptimize.models.gaussian_linear,
+        x=_velocity[:, np.newaxis],
+        data=data,
+        variance=variance,
+        guess=np.array([np.nan, 0, 15, 0, 1]),
+    )
+    assert not np.any(result.converged)
+    assert np.all(result.iterations == 0)
+
+
+def test_least_squares_prior_mean_ignored() -> None:
+    """The prior mean of a parameter without a prior is ignored, even if it is
+    NaN."""
+    truth, data, variance, guess = _spectra(3, None)
+    kwargs: dict[str, Any] = dict(
+        model=ndoptimize.models.gaussian_linear,
+        x=_velocity[:, np.newaxis],
+        data=data,
+        variance=variance,
+        guess=guess,
+        prior_sigma=np.array([np.inf, 10, np.inf, np.inf, np.inf]),
+    )
+    result = ndoptimize.least_squares(**kwargs)
+    result_nan = ndoptimize.least_squares(
+        prior_mean=np.array([np.nan, 0, np.nan, np.inf, np.nan]),
+        **kwargs,
+    )
+    assert np.array_equal(result.parameters, result_nan.parameters)
 
 
 def test_least_squares_far_guess() -> None:
@@ -360,8 +452,17 @@ def test_least_squares_max_iterations() -> None:
     argvalues=[
         dict(correlation=np.array([0.5, 0.1])),
         dict(correlation=np.array([1, 0.9])),
+        dict(correlation=np.array([1, np.nan])),
         dict(data=np.zeros(5)),
         dict(x=_velocity),
+        dict(guess=np.array([1, 0.0])),
+        dict(guess=1.0),
+        dict(lower=np.array([0, 5, 0]), upper=np.array([10, 2, 30])),
+        dict(lower=np.nan),
+        dict(prior_sigma=0),
+        dict(prior_sigma=np.nan),
+        dict(prior_mean=np.nan, prior_sigma=1),
+        dict(max_iterations=-1),
     ],
 )
 def test_least_squares_invalid(kwargs: dict[str, Any]) -> None:

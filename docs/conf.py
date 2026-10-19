@@ -39,6 +39,9 @@ extensions = [
 ]
 autosummary_generate = True  # Turn on sphinx.ext.autosummary
 autosummary_imported_members = True
+# the stubs of `ndoptimize.Model` and `ndoptimize.model` would have the same
+# name on a case-insensitive file system
+autosummary_filename_map = {'ndoptimize.model': 'ndoptimize.model-decorator'}
 # autoclass_content = 'both'
 autodoc_typehints = "description"
 

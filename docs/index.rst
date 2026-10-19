@@ -17,7 +17,8 @@ The fits run in parallel on every CPU core, roughly half a million small
 fits per second on a 48-thread machine.
 
 Models are short Numba functions which compute the model and its Jacobian,
-compiled with the :func:`ndoptimize.model` decorator.
+compiled with the :func:`ndoptimize.model` decorator, which also names their
+parameters.
 Some common ones are provided in :mod:`ndoptimize.models`.
 
 

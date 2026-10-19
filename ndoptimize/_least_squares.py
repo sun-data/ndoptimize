@@ -4,9 +4,10 @@ Nonlinear least squares for many independent fits at once.
 
 import dataclasses
 import numpy as np
+import numpy.typing as npt
 import numba
 from numba import types
-from ._model import Model, signature_model
+from ._model import ModelFunction, Model, signature_model
 
 __all__ = [
     "LeastSquaresResult",
@@ -23,61 +24,123 @@ _damping_max = 1e7
 """The largest value of the damping parameter, at which a fit stalls."""
 
 _ridge = 1e-12
-"""A small number added to the diagonal of the normal matrix, so that it can
-be factored even where a parameter has no effect on the model."""
+"""
+The fraction of each diagonal element of the normal matrix which is added to
+it for the convergence test, so that it can be factored where the parameters
+are degenerate.
+"""
+
+_degenerate = 1e-12
+"""
+The smallest ratio of the precision of a parameter, given the parameters
+before it, to its precision alone, below which the normal matrix is singular
+and the covariance of the parameters is NaN.
+"""
 
 
 @numba.njit(cache=True, error_model="numpy")
-def _cholesky(a: np.ndarray, m: int, w: int) -> bool:
+def _cholesky_band(band: np.ndarray, m: int) -> bool:
     """
-    Overwrite the lower triangle of the leading ``m x m`` block of the
-    symmetric matrix `a`, of bandwidth `w`, with its Cholesky factor.
-    Only the band of the lower triangle is read.
+    Overwrite the first `m` rows of `band`, the lower band of a symmetric
+    matrix with ``band[i, d]`` its element ``(i, i - d)``, with the same band
+    of its Cholesky factor.
 
-    Returns :obj:`False` if `a` is not positive definite.
+    Returns :obj:`False` if the matrix is not positive definite.
     """
+    w = band.shape[1] - 1
     for j in range(m):
-        s = a[j, j]
-        for k in range(max(0, j - w), j):
-            s -= a[j, k] * a[j, k]
+        s = band[j, 0]
+        for d in range(1, min(j, w) + 1):
+            s -= band[j, d] * band[j, d]
         if not s > 0:
             return False
-        d = np.sqrt(s)
-        a[j, j] = d
+        pivot = np.sqrt(s)
+        band[j, 0] = pivot
         for i in range(j + 1, min(m, j + w + 1)):
-            s = a[i, j]
+            s = band[i, i - j]
             for k in range(max(0, i - w), j):
-                s -= a[i, k] * a[j, k]
-            a[i, j] = s / d
+                s -= band[i, i - k] * band[j, j - k]
+            band[i, i - j] = s / pivot
     return True
 
 
 @numba.njit(cache=True, error_model="numpy")
-def _solve_lower(factor: np.ndarray, b: np.ndarray, m: int, w: int) -> None:
+def _solve_lower_band(band: np.ndarray, b: np.ndarray, m: int) -> None:
     """
     Overwrite the first `m` elements of `b` with the solution of
-    ``factor @ z = b`` for a lower-triangular `factor` of bandwidth `w`.
+    ``factor @ z = b``, for the lower-triangular `factor` stored as a band by
+    :func:`_cholesky_band`.
     """
+    w = band.shape[1] - 1
     for i in range(m):
         s = b[i]
         for k in range(max(0, i - w), i):
-            s -= factor[i, k] * b[k]
-        b[i] = s / factor[i, i]
+            s -= band[i, i - k] * b[k]
+        b[i] = s / band[i, 0]
 
 
 @numba.njit(cache=True, error_model="numpy")
-def _solve_lower_columns(factor: np.ndarray, b: np.ndarray, m: int, w: int) -> None:
+def _solve_lower_band_columns(band: np.ndarray, b: np.ndarray, m: int) -> None:
     """
     Overwrite the first `m` rows of every column of `b` with the solution of
-    ``factor @ z = b`` for a lower-triangular `factor` of bandwidth `w`.
+    ``factor @ z = b``, for the lower-triangular `factor` stored as a band by
+    :func:`_cholesky_band`.
     """
+    w = band.shape[1] - 1
     for i in range(m):
-        d = factor[i, i]
+        pivot = band[i, 0]
         for c in range(b.shape[1]):
             s = b[i, c]
             for k in range(max(0, i - w), i):
-                s -= factor[i, k] * b[k, c]
-            b[i, c] = s / d
+                s -= band[i, i - k] * b[k, c]
+            b[i, c] = s / pivot
+
+
+@numba.njit(cache=True, error_model="numpy")
+def _cholesky(a: np.ndarray, degenerate: float) -> bool:
+    """
+    Overwrite the lower triangle of the small symmetric matrix `a` with its
+    Cholesky factor.
+
+    Returns :obj:`False` if `a` is not positive definite, or if a pivot is
+    no more than `degenerate` times the diagonal element it came from.
+    For a normal matrix, that ratio is the precision of a parameter, given
+    the parameters before it, over its precision alone.
+    """
+    n = a.shape[0]
+    for j in range(n):
+        s = a[j, j]
+        for k in range(j):
+            s -= a[j, k] * a[j, k]
+        if not s > degenerate * a[j, j]:
+            return False
+        pivot = np.sqrt(s)
+        a[j, j] = pivot
+        for i in range(j + 1, n):
+            s = a[i, j]
+            for k in range(j):
+                s -= a[i, k] * a[j, k]
+            a[i, j] = s / pivot
+    return True
+
+
+@numba.njit(cache=True, error_model="numpy")
+def _solve_factored(factor: np.ndarray, b: np.ndarray, out: np.ndarray) -> None:
+    """
+    Solve ``a @ x = b`` into `out`, given the Cholesky factor of `a` from
+    :func:`_cholesky`.
+    """
+    n = factor.shape[0]
+    for i in range(n):
+        s = b[i]
+        for k in range(i):
+            s -= factor[i, k] * out[k]
+        out[i] = s / factor[i, i]
+    for i in range(n - 1, -1, -1):
+        s = out[i]
+        for k in range(i + 1, n):
+            s -= factor[k, i] * out[k]
+        out[i] = s / factor[i, i]
 
 
 @numba.njit(cache=True, error_model="numpy")
@@ -93,17 +156,10 @@ def _solve_positive_definite(
 
     Returns :obj:`False` if `a` is not positive definite.
     """
-    n = a.shape[0]
     work[:, :] = a
-    if not _cholesky(work, n, n):
+    if not _cholesky(work, 0.0):
         return False
-    out[:] = b
-    _solve_lower(work, out, n, n)
-    for i in range(n - 1, -1, -1):
-        s = out[i]
-        for k in range(i + 1, n):
-            s -= work[k, i] * out[k]
-        out[i] = s / work[i, i]
+    _solve_factored(work, b, out)
     return True
 
 
@@ -111,7 +167,6 @@ def _solve_positive_definite(
 def _whitened_residual(
     factor: np.ndarray,
     m: int,
-    w: int,
     data_whitened: np.ndarray,
     f: np.ndarray,
     out: np.ndarray,
@@ -122,7 +177,7 @@ def _whitened_residual(
     """
     for j in range(m):
         out[j] = f[j]
-    _solve_lower(factor, out, m, w)
+    _solve_lower_band(factor, out, m)
     total = 0.0
     for j in range(m):
         r = data_whitened[j] - out[j]
@@ -135,7 +190,6 @@ def _whitened_residual(
 def _whitened_jacobian(
     factor: np.ndarray,
     m: int,
-    w: int,
     jacobian: np.ndarray,
     out: np.ndarray,
 ) -> None:
@@ -143,7 +197,7 @@ def _whitened_jacobian(
     for j in range(m):
         for k in range(jacobian.shape[1]):
             out[j, k] = jacobian[j, k]
-    _solve_lower_columns(factor, out, m, w)
+    _solve_lower_band_columns(factor, out, m)
 
 
 @numba.njit(cache=True, error_model="numpy")
@@ -167,14 +221,16 @@ def _normal(
         s = 0.0
         for j in range(m):
             s += jacobian_whitened[j, k] * residual_whitened[j]
-        g[k] = s - prior_precision[k] * (parameters[k] - prior_mean[k])
+        g[k] = s
         for q in range(k + 1):
             s = 0.0
             for j in range(m):
                 s += jacobian_whitened[j, k] * jacobian_whitened[j, q]
             a[k, q] = s
             a[q, k] = s
-        a[k, k] += prior_precision[k]
+        if prior_precision[k] > 0:
+            g[k] -= prior_precision[k] * (parameters[k] - prior_mean[k])
+            a[k, k] += prior_precision[k]
 
 
 @numba.njit(cache=True, error_model="numpy")
@@ -192,6 +248,16 @@ def _chi2_prior(
     return s
 
 
+def _input(ndim: int) -> types.Array:
+    """
+    The Numba type of an array input of :func:`_levenberg_marquardt`.
+
+    It is read-only and of any layout, so that an argument broadcast over the
+    fits can be passed as a view rather than copied.
+    """
+    return types.Array(types.float64, ndim, "A", readonly=True)
+
+
 _signature_kernel = types.Tuple(
     (
         types.float64[:, ::1],
@@ -203,15 +269,15 @@ _signature_kernel = types.Tuple(
     )
 )(
     types.FunctionType(signature_model),
-    types.float64[:, :, ::1],
-    types.float64[:, ::1],
-    types.float64[:, ::1],
-    types.float64[::1],
-    types.float64[:, ::1],
-    types.float64[:, ::1],
-    types.float64[:, ::1],
-    types.float64[:, ::1],
-    types.float64[:, ::1],
+    _input(3),
+    _input(2),
+    _input(2),
+    _input(1),
+    _input(2),
+    _input(2),
+    _input(2),
+    _input(2),
+    _input(2),
     types.int64,
     types.float64,
     types.int64,
@@ -227,7 +293,7 @@ dispatcher argument: such a function is compiled anew in every process.
 
 @numba.njit(_signature_kernel, parallel=True, cache=True, error_model="numpy")
 def _levenberg_marquardt(
-    model: Model,
+    model: ModelFunction,
     x: np.ndarray,
     data: np.ndarray,
     variance: np.ndarray,
@@ -251,7 +317,7 @@ def _levenberg_marquardt(
     Parameters
     ----------
     model
-        The model function, compiled with :func:`ndoptimize.model`.
+        The compiled model function, :attr:`ndoptimize.Model.function`.
     x
         The independent variable, ``(num_fits, num_points, num_inputs)``.
     data
@@ -274,7 +340,7 @@ def _levenberg_marquardt(
         The standard deviation of the Gaussian prior of each parameter,
         ``(num_fits, num_parameters)``, infinite for no prior.
     max_iterations
-        The maximum number of steps per fit.
+        The maximum number of steps per fit, not negative.
     tolerance
         The Newton decrement below which a fit has converged.
     num_threads
@@ -285,7 +351,6 @@ def _levenberg_marquardt(
     num_fit, num_point, num_input = x.shape
     num_parameter = guess.shape[1]
     num_lag = min(correlation.shape[0], num_point)
-    w = num_lag - 1
 
     parameters = np.full((num_fit, num_parameter), np.nan)
     covariance = np.full((num_fit, num_parameter, num_parameter), np.nan)
@@ -300,9 +365,9 @@ def _levenberg_marquardt(
         data_whitened = np.empty(num_point)
         sigma = np.empty(num_point)
         index = np.empty(num_point, dtype=np.int64)
-        factor = np.zeros((num_point, num_point))
+        factor = np.empty((num_point, num_lag))
         f = np.empty(num_point)
-        jac = np.empty((num_point, num_parameter))
+        jac = np.zeros((num_point, num_parameter))
         residual = np.empty(num_point)
         residual_new = np.empty(num_point)
         jacobian = np.empty((num_point, num_parameter))
@@ -342,37 +407,38 @@ def _levenberg_marquardt(
             # factor the banded noise covariance of the usable points and
             # whiten the data with it
             for r in range(m):
-                for s in range(max(0, r - w), r + 1):
-                    lag = index[r] - index[s]
+                for d in range(min(r, num_lag - 1) + 1):
+                    lag = index[r] - index[r - d]
                     rho = correlation[lag] if lag < num_lag else 0.0
-                    factor[r, s] = sigma[r] * sigma[s] * rho
-            if not _cholesky(factor, m, w):
+                    factor[r, d] = sigma[r] * sigma[r - d] * rho
+            if not _cholesky_band(factor, m):
                 continue
-            _solve_lower(factor, data_whitened, m, w)
+            _solve_lower_band(factor, data_whitened, m)
 
             for k in range(num_parameter):
                 precision[k] = 1 / prior_sigma[i, k] ** 2
-                mean[k] = prior_mean[i, k] if np.isfinite(prior_mean[i, k]) else 0
+                mean[k] = prior_mean[i, k]
                 p[k] = min(max(guess[i, k], lower[i, k]), upper[i, k])
 
             model(xg[:m], p, f[:m], jac[:m])
-            chi2_data = _whitened_residual(factor, m, w, data_whitened, f, residual)
-            _whitened_jacobian(factor, m, w, jac, jacobian)
+            chi2_data = _whitened_residual(factor, m, data_whitened, f, residual)
+            _whitened_jacobian(factor, m, jac, jacobian)
             objective = chi2_data + _chi2_prior(p, mean, precision)
 
             damping = _damping_initial
             nu = 2.0
             done = False
             n_step = 0
-            for _ in range(max_iterations + 1):
+            while True:
                 _normal(jacobian, residual, m, p, mean, precision, a, g)
 
-                # hold the parameters which are at a bound and are pushed
-                # outward by the gradient
+                # hold the parameters which have no effect on the model, and
+                # those which are at a bound and are pushed outward by the
+                # gradient
                 for k in range(num_parameter):
                     at_lower = p[k] <= lower[i, k] and g[k] < 0
                     at_upper = p[k] >= upper[i, k] and g[k] > 0
-                    free[k] = not (at_lower or at_upper)
+                    free[k] = a[k, k] != 0 and not (at_lower or at_upper)
 
                 # the Newton decrement of the free parameters, the decrease
                 # in chi-squared a Gauss-Newton step would give if the model
@@ -381,10 +447,7 @@ def _levenberg_marquardt(
                     rhs[k] = g[k] if free[k] else 0
                     for q in range(num_parameter):
                         system[k, q] = a[k, q] if (free[k] and free[q]) else 0
-                    if free[k]:
-                        system[k, k] += _ridge
-                    else:
-                        system[k, k] = 1
+                    system[k, k] = a[k, k] * (1 + _ridge) if free[k] else 1
                 if _solve_positive_definite(system, rhs, work, step):
                     decrement = 0.0
                     for k in range(num_parameter):
@@ -403,19 +466,17 @@ def _levenberg_marquardt(
                 while not accepted:
                     for k in range(num_parameter):
                         if free[k]:
-                            system[k, k] = (a[k, k] + _ridge) * (1 + damping)
+                            system[k, k] = a[k, k] * (1 + damping)
                     if _solve_positive_definite(system, rhs, work, step):
                         for k in range(num_parameter):
                             p_new[k] = p[k] + step[k]
                             p_new[k] = min(max(p_new[k], lower[i, k]), upper[i, k])
                         model(xg[:m], p_new, f[:m], jac[:m])
                         chi2_new = _whitened_residual(
-                            factor, m, w, data_whitened, f, residual_new
+                            factor, m, data_whitened, f, residual_new
                         )
                         objective_new = chi2_new + _chi2_prior(p_new, mean, precision)
                         accepted = objective_new < objective
-                        if np.isnan(objective) and not np.isnan(objective_new):
-                            accepted = True
                     if accepted:
                         # Nielsen's rule: the better the quadratic model
                         # predicted the decrease, the less damping
@@ -437,45 +498,35 @@ def _levenberg_marquardt(
                     else:
                         damping = min(damping * nu, _damping_max)
                         nu *= 2
-                n_step += 1
                 if not accepted:
                     break
+                n_step += 1
 
                 p, p_new = p_new, p
                 residual, residual_new = residual_new, residual
                 chi2_data = chi2_new
                 objective = objective_new
-                _whitened_jacobian(factor, m, w, jac, jacobian)
+                _whitened_jacobian(factor, m, jac, jacobian)
 
             # the covariance of the parameters is the inverse of the normal
-            # matrix, with infinite variance for a parameter which nothing
-            # constrains, and a small ridge if the rest is still singular
+            # matrix, with infinite variance for a parameter which has no
+            # effect on the model, and NaN if the rest of it is singular
             _normal(jacobian, residual, m, p, mean, precision, a, g)
-            diagonal_max = 0.0
             for k in range(num_parameter):
-                diagonal_max = max(diagonal_max, a[k, k])
-            for attempt in range(2):
-                for k in range(num_parameter):
-                    for q in range(num_parameter):
-                        constrained = a[k, k] > 0 and a[q, q] > 0
-                        system[k, q] = a[k, q] if constrained else 0
-                    if not a[k, k] > 0:
-                        system[k, k] = 1
-                    elif attempt > 0:
-                        system[k, k] += _ridge * diagonal_max
-                invertible = True
+                for q in range(num_parameter):
+                    constrained = a[k, k] != 0 and a[q, q] != 0
+                    work[k, q] = a[k, q] if constrained else 0
+                if a[k, k] == 0:
+                    work[k, k] = 1
+            if _cholesky(work, _degenerate):
                 for k in range(num_parameter):
                     for q in range(num_parameter):
                         unit[q] = 1 if q == k else 0
-                    if not _solve_positive_definite(system, unit, work, step):
-                        invertible = False
-                        break
+                    _solve_factored(work, unit, step)
                     for q in range(num_parameter):
                         covariance[i, q, k] = step[q]
-                if invertible:
-                    break
             for k in range(num_parameter):
-                if not a[k, k] > 0:
+                if a[k, k] == 0:
                     for q in range(num_parameter):
                         covariance[i, k, q] = 0
                         covariance[i, q, k] = 0
@@ -490,7 +541,7 @@ def _levenberg_marquardt(
     return parameters, covariance, chi2, num_used, iterations, converged
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, eq=False)
 class LeastSquaresResult:
     """
     The results of :func:`least_squares` for every fit of a batch.
@@ -508,8 +559,11 @@ class LeastSquaresResult:
 
     This is the inverse of the normal matrix, :math:`J^T C^{-1} J`, plus the
     precision of the priors, at the solution.
-    A parameter which neither the data nor its prior constrains has an
+    A parameter which has no effect on the model and no prior has an
     infinite variance.
+    If the rest of the normal matrix is singular, because the data and the
+    priors cannot constrain some combination of the parameters, as in a fit
+    with fewer usable points than parameters, the covariance is NaN.
     """
 
     chi2: np.ndarray
@@ -529,45 +583,53 @@ class LeastSquaresResult:
 
 
 def _flatten(
+    model: Model,
     x: np.ndarray,
     data: np.ndarray,
-    variance: float | np.ndarray,
+    variance: np.ndarray,
     guess: np.ndarray,
-    lower: float | np.ndarray,
-    upper: float | np.ndarray,
-    prior_mean: float | np.ndarray,
-    prior_sigma: float | np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    prior_mean: np.ndarray,
+    prior_sigma: np.ndarray,
 ) -> tuple[tuple[int, ...], dict[str, np.ndarray]]:
     """
-    Broadcast the arguments of :func:`least_squares` against each other over
-    their batch axes and flatten those axes, into writable, contiguous
-    arrays of the types the kernel's signature requires.
+    Check the arguments of :func:`least_squares`, arrays of floats, broadcast
+    them against each other over their batch axes and flatten those axes,
+    into views of the arguments where possible.
 
     Returns the batch shape and the flattened arrays.
     """
-    x = np.asarray(x, dtype=float)
-    data = np.asarray(data, dtype=float)
-    guess = np.asarray(guess, dtype=float)
-
     if x.ndim < 2:
         raise ValueError(
             f"`x` must have at least two axes, (..., num_points, num_inputs), "
             f"got shape {x.shape}."
         )
     num_point, num_input = x.shape[-2:]
-    num_parameter = guess.shape[-1]
+    num_parameter = len(model.parameters)
 
     if data.shape[-1:] != (num_point,):
         raise ValueError(
             f"The last axis of `data`, {data.shape}, must match the "
             f"number of points in `x`, {num_point}."
         )
+    if guess.shape[-1:] != (num_parameter,):
+        raise ValueError(
+            f"The last axis of `guess`, {guess.shape}, must match the "
+            f"number of parameters of the model, {model.parameters}."
+        )
+    if not np.all(lower <= upper):
+        raise ValueError("`lower` must not exceed `upper`, and neither may be NaN.")
+    if not np.all(prior_sigma > 0):
+        raise ValueError("`prior_sigma` must be positive.")
+    if np.any(np.isfinite(prior_sigma) & ~np.isfinite(prior_mean)):
+        raise ValueError("`prior_mean` must be finite where `prior_sigma` is finite.")
 
     variance = np.broadcast_to(
-        variance, np.broadcast_shapes(np.shape(variance), (num_point,))
+        variance, np.broadcast_shapes(variance.shape, (num_point,))
     )
     lower, upper, prior_mean, prior_sigma = (
-        np.broadcast_to(a, np.broadcast_shapes(np.shape(a), (num_parameter,)))
+        np.broadcast_to(a, np.broadcast_shapes(a.shape, (num_parameter,)))
         for a in (lower, upper, prior_mean, prior_sigma)
     )
 
@@ -584,9 +646,12 @@ def _flatten(
     num_fit = int(np.prod(shape))
 
     def flat(a: np.ndarray, *shape_trailing: int) -> np.ndarray:
-        """A writable, contiguous copy of `a` with its batch axes flattened."""
+        """
+        `a` broadcast to the batch shape with its batch axes flattened, a
+        view of `a` unless the flattening needs a copy.
+        """
         a = np.broadcast_to(a, shape + shape_trailing)
-        return np.array(a, dtype=float, order="C").reshape(num_fit, *shape_trailing)
+        return a.reshape(num_fit, *shape_trailing)
 
     arrays = dict(
         x=flat(x, num_point, num_input),
@@ -604,15 +669,15 @@ def _flatten(
 
 def least_squares(
     model: Model,
-    x: np.ndarray,
-    data: np.ndarray,
-    variance: float | np.ndarray,
-    guess: np.ndarray,
-    lower: float | np.ndarray = -np.inf,
-    upper: float | np.ndarray = np.inf,
-    prior_mean: float | np.ndarray = 0,
-    prior_sigma: float | np.ndarray = np.inf,
-    correlation: None | np.ndarray = None,
+    x: npt.ArrayLike,
+    data: npt.ArrayLike,
+    variance: npt.ArrayLike,
+    guess: npt.ArrayLike,
+    lower: npt.ArrayLike = -np.inf,
+    upper: npt.ArrayLike = np.inf,
+    prior_mean: npt.ArrayLike = 0,
+    prior_sigma: npt.ArrayLike = np.inf,
+    correlation: None | npt.ArrayLike = None,
     max_iterations: int = 1000,
     tolerance: float = 1e-8,
 ) -> LeastSquaresResult:
@@ -652,7 +717,7 @@ def least_squares(
     Parameters
     ----------
     model
-        The model to fit, a function compiled with :func:`ndoptimize.model`.
+        The model to fit, made with :func:`ndoptimize.model`.
     x
         The independent variable, an array of shape
         ``(..., num_points, num_inputs)``.
@@ -666,25 +731,29 @@ def least_squares(
         their fit.
     guess
         The initial guess for the parameters, an array of shape
-        ``(..., num_parameters)``.
+        ``(..., num_parameters)``, where ``num_parameters`` is the number of
+        names in :attr:`ndoptimize.Model.parameters`.
+        It is clipped to the bounds.
     lower
         The lower bound of each parameter, an array of shape
         ``(..., num_parameters)``.
     upper
         The upper bound of each parameter, an array of shape
-        ``(..., num_parameters)``.
+        ``(..., num_parameters)``, no less than `lower`.
     prior_mean
         The mean of the Gaussian prior of each parameter, an array of shape
         ``(..., num_parameters)``.
+        It is ignored where `prior_sigma` is infinite.
     prior_sigma
-        The standard deviation of the Gaussian prior of each parameter, an
-        array of shape ``(..., num_parameters)``.
+        The standard deviation of the Gaussian prior of each parameter, a
+        positive array of shape ``(..., num_parameters)``.
         An infinite standard deviation, the default, means no prior.
     correlation
         The correlation of the noise of two data points by their separation
         along the last axis of `data`, in samples, starting with 1 for no
         separation and zero beyond its length.
         The separation counts the points left out of a fit.
+        It must describe a positive-definite noise covariance.
         If :obj:`None` (the default), the noise is uncorrelated.
     max_iterations
         The maximum number of steps for each fit.
@@ -718,7 +787,10 @@ def least_squares(
 
     Steps are clipped to the bounds, and a parameter at a bound which the
     gradient pushes outward is held fixed for the step and for the
-    convergence test.
+    convergence test, as is a parameter which has no effect on the model.
+
+    A fit whose :math:`\chi^2` is NaN at the initial guess, where the model
+    is NaN for instance, takes no steps and does not converge.
 
     Examples
     --------
@@ -773,46 +845,51 @@ def least_squares(
         ax.set_xlabel("(fitted center - true center) / uncertainty");
         ax.legend();
     """
+    if max_iterations < 0:
+        raise ValueError(
+            f"`max_iterations` must not be negative, got {max_iterations}."
+        )
+
     shape, a = _flatten(
-        x=x,
-        data=data,
-        variance=variance,
-        guess=guess,
-        lower=lower,
-        upper=upper,
-        prior_mean=prior_mean,
-        prior_sigma=prior_sigma,
+        model=model,
+        x=np.asarray(x, dtype=float),
+        data=np.asarray(data, dtype=float),
+        variance=np.asarray(variance, dtype=float),
+        guess=np.asarray(guess, dtype=float),
+        lower=np.asarray(lower, dtype=float),
+        upper=np.asarray(upper, dtype=float),
+        prior_mean=np.asarray(prior_mean, dtype=float),
+        prior_sigma=np.asarray(prior_sigma, dtype=float),
     )
 
     if correlation is None:
-        correlation = np.ones(1)
-    correlation = np.array(correlation, dtype=float).reshape(-1)
-    if correlation.size == 0 or correlation[0] != 1:
+        correlation = 1
+    rho = np.array(correlation, dtype=float).reshape(-1)
+    if rho.size == 0 or rho[0] != 1:
         raise ValueError(
             f"`correlation` must start with 1, the correlation of a point "
-            f"with itself, got {correlation}."
+            f"with itself, got {rho}."
         )
 
     # the noise correlation of every fit is a principal submatrix of this
     # one, so it is positive definite if this one is
     num_point = a["x"].shape[1]
-    rho = np.zeros(num_point)
-    rho[: correlation.size] = correlation[:num_point]
-    index = np.arange(num_point)
-    try:
-        np.linalg.cholesky(rho[np.abs(index[:, np.newaxis] - index)])
-    except np.linalg.LinAlgError:
+    num_lag = min(rho.size, num_point)
+    band = np.zeros((num_point, num_lag))
+    for d in range(num_lag):
+        band[d:, d] = rho[d]
+    if not np.all(np.isfinite(rho)) or not _cholesky_band(band, num_point):
         raise ValueError(
-            f"`correlation`, {correlation}, does not describe a positive "
+            f"`correlation`, {rho}, does not describe a positive "
             f"definite noise covariance for {num_point} points."
         )
 
     result = _levenberg_marquardt(
-        model,
+        model.function,
         a["x"],
         a["data"],
         a["variance"],
-        correlation,
+        rho,
         a["guess"],
         a["lower"],
         a["upper"],
