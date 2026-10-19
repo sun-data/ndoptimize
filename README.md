@@ -159,8 +159,8 @@ def exponential(
 ```
 
 [`ndoptimize.models`](https://ndoptimize.readthedocs.io/en/latest/_autosummary/ndoptimize.models.html)
-has some common models: a Gaussian, a Gaussian plus a straight line, and two
-Gaussians plus a straight line.
+has some common models: a Gaussian, a Gaussian averaged over each bin, a
+Gaussian plus a straight line, and two Gaussians plus a straight line.
 
 ## Citation
 
