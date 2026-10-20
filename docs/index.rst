@@ -35,7 +35,7 @@ The package provides:
 - :func:`ndoptimize.evaluate`, which evaluates a model for many sets of
   parameters at once, such as the best-fit ones.
 - :func:`ndoptimize.model`, a decorator which compiles a function as a model,
-  an :class:`ndoptimize.Model`, and names its parameters.
+  an :class:`ndoptimize.Model`, and names its parameters and inputs.
 - :mod:`ndoptimize.models`, some common models: a Gaussian, a Gaussian
   averaged over each bin, a Gaussian plus a straight line, and two Gaussians
   plus a straight line.
@@ -62,8 +62,8 @@ standard deviation in the tests, but they differ in the following ways.
   Gauss-Newton step predicts replaces ``ftol``, ``xtol`` and ``gtol``.
 - **Model arguments.** A model takes only the points ``x`` and the
   parameters, so any other data it needs, such as the edges of each bin, goes
-  in more columns of ``x``. SciPy passes extra data through ``args`` and
-  ``kwargs``.
+  in more columns of ``x``, each one an input that the model names. SciPy
+  passes extra data through ``args`` and ``kwargs``.
 - **Results.** :attr:`~ndoptimize.LeastSquaresResult.chi2` is the sum of the
   squares of the whitened residuals, without the priors, while SciPy's
   ``cost`` is half the sum of the squares of whatever residual it is given.
@@ -154,7 +154,11 @@ A model is a function, ``model(x, parameters, f, jacobian)``, which writes its
 value at the points ``x``, an array of shape ``(num_points, num_inputs)``,
 into ``f``, and its derivatives with respect to the ``parameters`` into
 ``jacobian``.
-The :func:`ndoptimize.model` decorator compiles it and names its parameters.
+The :func:`ndoptimize.model` decorator compiles it and names its parameters
+and its inputs, the columns of ``x``.
+:func:`~ndoptimize.least_squares` and :func:`~ndoptimize.evaluate` check that
+``x`` has one column for each input, since the compiled model does not check
+its indices.
 The compiled model is cached on disk, so define it in a file or a notebook.
 A model defined in the interactive interpreter needs
 ``@ndoptimize.model(..., cache=False)``.
@@ -166,7 +170,7 @@ keep the amplitude from going negative and the scale at least 0.1.
 
     import math
 
-    @ndoptimize.model(parameters=("amplitude", "scale"))
+    @ndoptimize.model(parameters=("amplitude", "scale"), inputs=("x",))
     def exponential(
         x: np.ndarray,
         parameters: np.ndarray,

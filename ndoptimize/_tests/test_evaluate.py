@@ -86,6 +86,8 @@ def test_evaluate_least_squares() -> None:
     argnames="kwargs",
     argvalues=[
         dict(x=np.linspace(-50, 50, 21)),
+        dict(x=np.zeros((21, 2))),
+        dict(model=ndoptimize.models.gaussian_binned),
         dict(parameters=np.array([1, 0.0])),
         dict(parameters=1.0),
     ],

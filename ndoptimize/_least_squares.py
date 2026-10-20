@@ -601,11 +601,7 @@ def _flatten(
 
     Returns the batch shape and the flattened arrays.
     """
-    if x.ndim < 2:
-        raise ValueError(
-            f"`x` must have at least two axes, (..., num_points, num_inputs), "
-            f"got shape {x.shape}."
-        )
+    model._check_shapes(x, guess, "guess")
     num_point, num_input = x.shape[-2:]
     num_parameter = len(model.parameters)
 
@@ -613,11 +609,6 @@ def _flatten(
         raise ValueError(
             f"The last axis of `data`, {data.shape}, must match the "
             f"number of points in `x`, {num_point}."
-        )
-    if guess.shape[-1:] != (num_parameter,):
-        raise ValueError(
-            f"The last axis of `guess`, {guess.shape}, must match the "
-            f"number of parameters of the model, {model.parameters}."
         )
     if not np.all(lower <= upper):
         raise ValueError("`lower` must not exceed `upper`, and neither may be NaN.")
@@ -721,7 +712,8 @@ def least_squares(
         The model to fit, made with :func:`ndoptimize.model`.
     x
         The independent variable, an array of shape
-        ``(..., num_points, num_inputs)``.
+        ``(..., num_points, num_inputs)``, where ``num_inputs`` is the number
+        of names in :attr:`ndoptimize.Model.inputs`.
     data
         The data to fit, an array of shape ``(..., num_points)``.
         Points which are NaN are left out of their fit.

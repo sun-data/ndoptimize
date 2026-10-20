@@ -16,6 +16,7 @@ __all__ = [
 
 @_model.model(
     parameters=("amplitude", "center", "width"),
+    inputs=("x",),
 )
 def gaussian(
     x: np.ndarray,
@@ -31,12 +32,12 @@ def gaussian(
         f(x) = A \exp \left( -\frac{(x - \mu)^2}{2 \sigma^2} \right),
 
     with parameters :math:`(A, \mu, \sigma)`, the amplitude, center and
-    width, of the first component of :math:`x`.
+    width, of a single input, :math:`x`.
 
     Parameters
     ----------
     x
-        The points at which to evaluate the model, ``(num_points, num_inputs)``.
+        The points at which to evaluate the model, ``(num_points, 1)``.
     parameters
         The amplitude, center, and width.
     f
@@ -57,6 +58,7 @@ def gaussian(
 
 @_model.model(
     parameters=("amplitude", "center", "width"),
+    inputs=("lower", "upper"),
 )
 def gaussian_binned(
     x: np.ndarray,
@@ -77,8 +79,8 @@ def gaussian_binned(
             \right],
 
     with the same parameters as :func:`gaussian`, the amplitude, center and
-    width, where :math:`x_0` and :math:`x_1`, the first two components of
-    :math:`x`, are the edges of each bin.
+    width, where its two inputs, ``lower`` and ``upper``, are the edges of
+    each bin, :math:`x_0` and :math:`x_1`.
     The integral of the Gaussian is :math:`\sqrt{2 \pi} A \sigma`.
 
     Averaging matters when the bins are not much narrower than the line.
@@ -90,8 +92,8 @@ def gaussian_binned(
     Parameters
     ----------
     x
-        The edges of each bin, ``(num_points, num_inputs)``, with the lower
-        edge in the first column and the upper edge in the second.
+        The edges of each bin, ``(num_points, 2)``, with the lower edge in the
+        first column and the upper edge in the second.
     parameters
         The amplitude, center, and width.
     f
@@ -171,6 +173,7 @@ def gaussian_binned(
 
 @_model.model(
     parameters=("amplitude", "center", "width", "slope", "intercept"),
+    inputs=("x",),
 )
 def gaussian_linear(
     x: np.ndarray,
@@ -186,13 +189,13 @@ def gaussian_linear(
         f(x) = A \exp \left( -\frac{(x - \mu)^2}{2 \sigma^2} \right) + m x + b,
 
     with parameters :math:`(A, \mu, \sigma, m, b)`, the amplitude, center,
-    width, slope and intercept, of the first component of :math:`x`.
+    width, slope and intercept, of a single input, :math:`x`.
     The line takes up a continuum or background under a spectral line.
 
     Parameters
     ----------
     x
-        The points at which to evaluate the model, ``(num_points, num_inputs)``.
+        The points at which to evaluate the model, ``(num_points, 1)``.
     parameters
         The amplitude, center, width, slope and intercept.
     f
@@ -226,6 +229,7 @@ def gaussian_linear(
         "center_2",
         "width_2",
     ),
+    inputs=("x",),
 )
 def two_gaussians_linear(
     x: np.ndarray,
@@ -242,14 +246,14 @@ def two_gaussians_linear(
             + A_2 \exp \left( -\frac{(x - \mu_2)^2}{2 \sigma_2^2} \right),
 
     with parameters :math:`(A, \mu, \sigma, m, b, A_2, \mu_2, \sigma_2)`, of
-    the first component of :math:`x`.
+    a single input, :math:`x`.
     The first five parameters are those of :func:`gaussian_linear`, so its
     fit is a natural starting point for this one.
 
     Parameters
     ----------
     x
-        The points at which to evaluate the model, ``(num_points, num_inputs)``.
+        The points at which to evaluate the model, ``(num_points, 1)``.
     parameters
         The amplitude, center, width, slope and intercept, then the
         amplitude, center and width of the second Gaussian.

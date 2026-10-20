@@ -284,7 +284,7 @@ def test_least_squares_unconstrained() -> None:
     assert np.isfinite(result.covariance[0, 0])
 
 
-@ndoptimize.model(parameters=("intercept", "slope"))
+@ndoptimize.model(parameters=("intercept", "slope"), inputs=("x",))
 def _line(
     x: np.ndarray,
     parameters: np.ndarray,
@@ -324,7 +324,7 @@ def test_least_squares_linear() -> None:
     assert result.iterations <= 3
 
 
-@ndoptimize.model(parameters=("scale",))
+@ndoptimize.model(parameters=("scale",), inputs=("x",))
 def _scaled(
     x: np.ndarray,
     parameters: np.ndarray,
@@ -455,6 +455,8 @@ def test_least_squares_max_iterations() -> None:
         dict(correlation=np.array([1, np.nan])),
         dict(data=np.zeros(5)),
         dict(x=_velocity),
+        dict(x=np.stack([_velocity, _velocity], axis=-1)),
+        dict(model=ndoptimize.models.gaussian_binned),
         dict(guess=np.array([1, 0.0])),
         dict(guess=1.0),
         dict(lower=np.array([0, 5, 0]), upper=np.array([10, 2, 30])),
