@@ -3,6 +3,7 @@ The interface between a model function and the fitting kernels.
 """
 
 from typing import Callable, Sequence
+import collections.abc
 import dataclasses
 import functools
 import numpy as np
@@ -30,6 +31,26 @@ signature_model = types.void(
 """
 The Numba signature of a model function.
 """
+
+
+def _names(names: Sequence[str], argument: str) -> tuple[str, ...]:
+    """
+    Check that `names`, the argument named `argument`, is a sequence of unique
+    names, in order, and return it as a tuple.
+    """
+    if (
+        isinstance(names, str)
+        or not isinstance(names, collections.abc.Sequence)
+        or not all(isinstance(name, str) for name in names)
+    ):
+        raise TypeError(
+            f"`{argument}` must be a sequence of names, such as a tuple of "
+            f"strings, got {names!r}."
+        )
+    names = tuple(names)
+    if len(set(names)) != len(names):
+        raise ValueError(f"The names in `{argument}`, {names}, must be unique.")
+    return names
 
 
 @dataclasses.dataclass(eq=False)
@@ -61,6 +82,8 @@ class Model:
     """
 
     def __post_init__(self) -> None:
+        self.parameters = _names(self.parameters, "parameters")
+        self.inputs = _names(self.inputs, "inputs")
         functools.update_wrapper(self, self.function, updated=())
 
     def __repr__(self) -> str:
@@ -87,6 +110,34 @@ class Model:
         """
         return self.function.__qualname__
 
+    def _check_shapes(
+        self,
+        x: np.ndarray,
+        parameters: np.ndarray,
+        name: str,
+    ) -> None:
+        """
+        Check the last axis of the points `x`, ``(..., num_points, num_inputs)``,
+        against the inputs of this model, and the last axis of `parameters`,
+        ``(..., num_parameters)``, the argument named `name`, against its
+        parameters, since the compiled function does not check its indices.
+        """
+        if np.ndim(x) < 2:
+            raise ValueError(
+                f"`x` must have at least two axes, (..., num_points, num_inputs), "
+                f"got shape {np.shape(x)}."
+            )
+        if np.shape(x)[-1] != len(self.inputs):
+            raise ValueError(
+                f"The last axis of `x`, {np.shape(x)}, must match the number of "
+                f"inputs of the model, {self.inputs}."
+            )
+        if np.shape(parameters)[-1:] != (len(self.parameters),):
+            raise ValueError(
+                f"The last axis of `{name}`, {np.shape(parameters)}, must match "
+                f"the number of parameters of the model, {self.parameters}."
+            )
+
     def __call__(
         self,
         x: np.ndarray,
@@ -111,44 +162,29 @@ class Model:
             The output array for the derivatives of the model with respect
             to the parameters, ``(num_points, num_parameters)``.
         """
-        num_point = np.shape(x)[0] if np.ndim(x) == 2 else -1
-        num_input = len(self.inputs)
+        self._check_shapes(x, parameters, "parameters")
+        num_point = np.shape(x)[0]
         num_parameter = len(self.parameters)
         if (
             np.ndim(x) != 2
-            or np.shape(x)[1] != num_input
-            or np.shape(parameters) != (num_parameter,)
+            or np.ndim(parameters) != 1
             or np.shape(f) != (num_point,)
             or np.shape(jacobian) != (num_point, num_parameter)
         ):
             raise ValueError(
-                f"For a model with {num_input} inputs and {num_parameter} "
-                f"parameters, `x` must have shape (num_points, {num_input}), "
-                f"`parameters` ({num_parameter},), `f` (num_points,) and "
-                f"`jacobian` (num_points, {num_parameter}), got {np.shape(x)}, "
-                f"{np.shape(parameters)}, {np.shape(f)} and "
-                f"{np.shape(jacobian)}."
+                f"For a model with the inputs {self.inputs} and the parameters "
+                f"{self.parameters}, `x` must have shape "
+                f"(num_points, {len(self.inputs)}), `parameters` "
+                f"({num_parameter},), `f` (num_points,) and `jacobian` "
+                f"(num_points, {num_parameter}), got {np.shape(x)}, "
+                f"{np.shape(parameters)}, {np.shape(f)} and {np.shape(jacobian)}."
             )
         self.function(x, parameters, f, jacobian)
 
 
-def _names(names: Sequence[str], argument: str) -> tuple[str, ...]:
-    """
-    Check that `names`, the argument of :func:`model` named `argument`, is a
-    sequence of unique names, and return it as a tuple.
-    """
-    if isinstance(names, str):
-        raise TypeError(
-            f"`{argument}` must be a sequence of names, got the string {names!r}."
-        )
-    names = tuple(names)
-    if len(set(names)) != len(names):
-        raise ValueError(f"The names in `{argument}`, {names}, must be unique.")
-    return names
-
-
 def model(
     parameters: Sequence[str],
+    *,
     inputs: Sequence[str],
     cache: bool = True,
 ) -> Callable[[ModelFunction], Model]:

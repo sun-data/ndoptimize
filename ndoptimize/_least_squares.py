@@ -601,28 +601,14 @@ def _flatten(
 
     Returns the batch shape and the flattened arrays.
     """
-    if x.ndim < 2:
-        raise ValueError(
-            f"`x` must have at least two axes, (..., num_points, num_inputs), "
-            f"got shape {x.shape}."
-        )
+    model._check_shapes(x, guess, "guess")
     num_point, num_input = x.shape[-2:]
     num_parameter = len(model.parameters)
 
-    if num_input != len(model.inputs):
-        raise ValueError(
-            f"The last axis of `x`, {x.shape}, must match the number of "
-            f"inputs of the model, {model.inputs}."
-        )
     if data.shape[-1:] != (num_point,):
         raise ValueError(
             f"The last axis of `data`, {data.shape}, must match the "
             f"number of points in `x`, {num_point}."
-        )
-    if guess.shape[-1:] != (num_parameter,):
-        raise ValueError(
-            f"The last axis of `guess`, {guess.shape}, must match the "
-            f"number of parameters of the model, {model.parameters}."
         )
     if not np.all(lower <= upper):
         raise ValueError("`lower` must not exceed `upper`, and neither may be NaN.")

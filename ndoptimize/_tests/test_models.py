@@ -1,5 +1,6 @@
 from typing import Any, Callable
 import copy
+import functools
 import math
 import pickle
 import numpy as np
@@ -60,26 +61,30 @@ def test_models(
 
 
 @pytest.mark.parametrize(
-    argnames="shape_x,shape_parameters,shape_f,shape_jacobian",
+    argnames="model,shape_x,shape_parameters,shape_f,shape_jacobian",
     argvalues=[
-        ((21, 1), (2,), (21,), (21, 2)),
-        ((21, 1), (3,), (20,), (21, 3)),
-        ((21, 1), (3,), (21,), (21, 5)),
-        ((21, 2), (3,), (21,), (21, 3)),
-        ((21,), (3,), (21,), (21, 3)),
+        (ndoptimize.models.gaussian, (21, 1), (2,), (21,), (21, 2)),
+        (ndoptimize.models.gaussian, (21, 1), (3,), (20,), (21, 3)),
+        (ndoptimize.models.gaussian, (21, 1), (3,), (21,), (21, 5)),
+        (ndoptimize.models.gaussian, (21, 2), (3,), (21,), (21, 3)),
+        (ndoptimize.models.gaussian, (21,), (3,), (21,), (21, 3)),
+        (ndoptimize.models.gaussian, (2, 21, 1), (3,), (2,), (2, 3)),
+        (ndoptimize.models.gaussian, (21, 1), (2, 3), (21,), (21, 3)),
+        (ndoptimize.models.gaussian_binned, (21, 1), (3,), (21,), (21, 3)),
     ],
 )
 def test_model_shapes(
+    model: ndoptimize.Model,
     shape_x: tuple[int, ...],
     shape_parameters: tuple[int, ...],
     shape_f: tuple[int, ...],
     shape_jacobian: tuple[int, ...],
 ) -> None:
     """Calling a model with arrays of the wrong shapes, including points with
-    more columns than the model has inputs, raises an error rather than
-    reading or writing outside them."""
+    more or fewer columns than the model has inputs, raises an error rather
+    than reading or writing outside them."""
     with pytest.raises(ValueError):
-        ndoptimize.models.gaussian(
+        model(
             np.zeros(shape_x),
             np.ones(shape_parameters),
             np.empty(shape_f),
@@ -120,15 +125,40 @@ def test_model_names() -> None:
     argvalues=[
         (dict(parameters="offset", inputs=("x",)), TypeError),
         (dict(parameters=("offset", "offset"), inputs=("x",)), ValueError),
+        (dict(parameters={"offset", "slope"}, inputs=("x",)), TypeError),
         (dict(parameters=("offset",), inputs="x"), TypeError),
+        (dict(parameters=("offset",), inputs=b"x"), TypeError),
         (dict(parameters=("offset",), inputs=("x", "x")), ValueError),
+        (dict(parameters=("offset",), inputs={"lower", "upper"}), TypeError),
+        (dict(parameters=("offset",), inputs=("x", None)), TypeError),
+        (dict(parameters=("offset",), inputs=None), TypeError),
     ],
 )
-def test_model_invalid(kwargs: dict[str, Any], error: type[Exception]) -> None:
+@pytest.mark.parametrize(
+    argnames="make",
+    argvalues=[
+        ndoptimize.model,
+        functools.partial(ndoptimize.Model, ndoptimize.models.gaussian.function),
+    ],
+    ids=["model", "Model"],
+)
+def test_model_invalid(
+    make: Callable[..., Any],
+    kwargs: dict[str, Any],
+    error: type[Exception],
+) -> None:
     """The names of the parameters and of the inputs must each be a sequence
-    of unique names, not a single string."""
+    of unique names, in order, not a single string or a set, whether the
+    model is made with the decorator or directly."""
     with pytest.raises(error):
-        ndoptimize.model(**kwargs)
+        make(**kwargs)
+
+
+def test_model_keywords() -> None:
+    """The inputs of a model are given by keyword, so that they cannot be
+    mistaken for its parameters."""
+    with pytest.raises(TypeError):
+        ndoptimize.model(("offset",), ("x",))  # type: ignore[misc]
 
 
 @pytest.mark.parametrize(

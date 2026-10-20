@@ -139,24 +139,9 @@ def _evaluate_arrays(
     parameters: np.ndarray,
 ) -> np.ndarray:
     """:func:`evaluate` for arguments which are already arrays of floats."""
-    if x.ndim < 2:
-        raise ValueError(
-            f"`x` must have at least two axes, (..., num_points, num_inputs), "
-            f"got shape {x.shape}."
-        )
+    model._check_shapes(x, parameters, "parameters")
     num_point, num_input = x.shape[-2:]
     num_parameter = len(model.parameters)
-
-    if num_input != len(model.inputs):
-        raise ValueError(
-            f"The last axis of `x`, {x.shape}, must match the number of "
-            f"inputs of the model, {model.inputs}."
-        )
-    if parameters.shape[-1:] != (num_parameter,):
-        raise ValueError(
-            f"The last axis of `parameters`, {parameters.shape}, must match "
-            f"the number of parameters of the model, {model.parameters}."
-        )
 
     shape = np.broadcast_shapes(x.shape[:-2], parameters.shape[:-1])
     num_set = math.prod(shape)
