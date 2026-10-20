@@ -609,6 +609,11 @@ def _flatten(
     num_point, num_input = x.shape[-2:]
     num_parameter = len(model.parameters)
 
+    if num_input != len(model.inputs):
+        raise ValueError(
+            f"The last axis of `x`, {x.shape}, must match the number of "
+            f"inputs of the model, {model.inputs}."
+        )
     if data.shape[-1:] != (num_point,):
         raise ValueError(
             f"The last axis of `data`, {data.shape}, must match the "
@@ -721,7 +726,8 @@ def least_squares(
         The model to fit, made with :func:`ndoptimize.model`.
     x
         The independent variable, an array of shape
-        ``(..., num_points, num_inputs)``.
+        ``(..., num_points, num_inputs)``, where ``num_inputs`` is the number
+        of names in :attr:`ndoptimize.Model.inputs`.
     data
         The data to fit, an array of shape ``(..., num_points)``.
         Points which are NaN are left out of their fit.

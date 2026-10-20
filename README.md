@@ -57,7 +57,8 @@ standard deviation in the tests, but they differ in the following ways.
   Gauss-Newton step predicts replaces `ftol`, `xtol` and `gtol`.
 - **Model arguments.** A model takes only the points `x` and the parameters,
   so any other data it needs, such as the edges of each bin, goes in more
-  columns of `x`. SciPy passes extra data through `args` and `kwargs`.
+  columns of `x`, each one an input that the model names. SciPy passes extra
+  data through `args` and `kwargs`.
 - **Results.** `chi2` is the sum of the squares of the whitened residuals,
   without the priors, while SciPy's `cost` is half the sum of the squares of
   whatever residual it is given. `max_iterations` and `iterations` count
@@ -133,7 +134,10 @@ value at the points `x`, an array of shape `(num_points, num_inputs)`, into
 `f`, and its derivatives with respect to the `parameters` into `jacobian`.
 The
 [`ndoptimize.model`](https://ndoptimize.readthedocs.io/en/latest/_autosummary/ndoptimize.model-decorator.html)
-decorator compiles it and names its parameters.
+decorator compiles it and names its parameters and its inputs, the columns of
+`x`.
+`least_squares()` and `evaluate()` check that `x` has one column for each
+input, since the compiled model does not check its indices.
 The compiled model is cached on disk, so define it in a file or a notebook.
 A model defined in the interactive interpreter needs
 `@ndoptimize.model(..., cache=False)`.
@@ -143,7 +147,7 @@ import math
 import numpy as np
 import ndoptimize
 
-@ndoptimize.model(parameters=("amplitude", "scale"))
+@ndoptimize.model(parameters=("amplitude", "scale"), inputs=("x",))
 def exponential(
     x: np.ndarray,
     parameters: np.ndarray,

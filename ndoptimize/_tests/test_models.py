@@ -60,30 +60,37 @@ def test_models(
 
 
 @pytest.mark.parametrize(
-    argnames="shape_parameters,shape_f,shape_jacobian",
+    argnames="shape_x,shape_parameters,shape_f,shape_jacobian",
     argvalues=[
-        ((2,), (21,), (21, 2)),
-        ((3,), (20,), (21, 3)),
-        ((3,), (21,), (21, 5)),
+        ((21, 1), (2,), (21,), (21, 2)),
+        ((21, 1), (3,), (20,), (21, 3)),
+        ((21, 1), (3,), (21,), (21, 5)),
+        ((21, 2), (3,), (21,), (21, 3)),
+        ((21,), (3,), (21,), (21, 3)),
     ],
 )
 def test_model_shapes(
+    shape_x: tuple[int, ...],
     shape_parameters: tuple[int, ...],
     shape_f: tuple[int, ...],
     shape_jacobian: tuple[int, ...],
 ) -> None:
-    """Calling a model with arrays of the wrong shapes raises an error rather
-    than reading or writing outside them."""
+    """Calling a model with arrays of the wrong shapes, including points with
+    more columns than the model has inputs, raises an error rather than
+    reading or writing outside them."""
     with pytest.raises(ValueError):
         ndoptimize.models.gaussian(
-            np.zeros((21, 1)),
+            np.zeros(shape_x),
             np.ones(shape_parameters),
             np.empty(shape_f),
             np.empty(shape_jacobian),
         )
 
 
-def test_model_parameters() -> None:
+def test_model_names() -> None:
+    """A model keeps the names of its parameters and inputs, and the
+    docstring of its function."""
+
     def constant(
         x: np.ndarray,
         parameters: np.ndarray,
@@ -95,15 +102,11 @@ def test_model_parameters() -> None:
             f[i] = parameters[0]
             jacobian[i, 0] = 1
 
-    with pytest.raises(TypeError):
-        ndoptimize.model(parameters="offset")
-    with pytest.raises(ValueError):
-        ndoptimize.model(parameters=("offset", "offset"))
-
-    model = ndoptimize.model(parameters=["offset"], cache=False)(constant)
+    model = ndoptimize.model(parameters=["offset"], inputs=["x"], cache=False)(constant)
     assert model.parameters == ("offset",)
+    assert model.inputs == ("x",)
     assert model.__doc__ == "A constant."
-    assert repr(model) == "Model(parameters=('offset',))"
+    assert repr(model) == "Model(parameters=('offset',), inputs=('x',))"
 
     f = np.empty(3)
     jacobian = np.empty((3, 1))
@@ -112,11 +115,41 @@ def test_model_parameters() -> None:
     assert np.all(jacobian == 1)
 
 
+@pytest.mark.parametrize(
+    argnames="kwargs,error",
+    argvalues=[
+        (dict(parameters="offset", inputs=("x",)), TypeError),
+        (dict(parameters=("offset", "offset"), inputs=("x",)), ValueError),
+        (dict(parameters=("offset",), inputs="x"), TypeError),
+        (dict(parameters=("offset",), inputs=("x", "x")), ValueError),
+    ],
+)
+def test_model_invalid(kwargs: dict[str, Any], error: type[Exception]) -> None:
+    """The names of the parameters and of the inputs must each be a sequence
+    of unique names, not a single string."""
+    with pytest.raises(error):
+        ndoptimize.model(**kwargs)
+
+
+@pytest.mark.parametrize(
+    argnames="model,inputs",
+    argvalues=[
+        (ndoptimize.models.gaussian, ("x",)),
+        (ndoptimize.models.gaussian_linear, ("x",)),
+        (ndoptimize.models.two_gaussians_linear, ("x",)),
+        (ndoptimize.models.gaussian_binned, ("lower", "upper")),
+    ],
+)
+def test_models_inputs(model: ndoptimize.Model, inputs: tuple[str, ...]) -> None:
+    """The common models name the columns of `x` that they read."""
+    assert model.inputs == inputs
+
+
 def test_model_uncached() -> None:
     """A model which is not defined in a file can be compiled without the
     cache."""
     source = (
-        "@ndoptimize.model(parameters=('slope',), cache=False)\n"
+        "@ndoptimize.model(parameters=('slope',), inputs=('x',), cache=False)\n"
         "def proportional(x, parameters, f, jacobian):\n"
         "    for i in range(x.shape[0]):\n"
         "        f[i] = parameters[0] * x[i, 0]\n"

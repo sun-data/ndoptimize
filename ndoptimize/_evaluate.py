@@ -85,7 +85,8 @@ def evaluate(
         The model to evaluate, made with :func:`ndoptimize.model`.
     x
         The points at which to evaluate the model, an array of shape
-        ``(..., num_points, num_inputs)``.
+        ``(..., num_points, num_inputs)``, where ``num_inputs`` is the number
+        of names in :attr:`ndoptimize.Model.inputs`.
     parameters
         The parameters of the model, an array of shape
         ``(..., num_parameters)``, where ``num_parameters`` is the number of
@@ -146,6 +147,11 @@ def _evaluate_arrays(
     num_point, num_input = x.shape[-2:]
     num_parameter = len(model.parameters)
 
+    if num_input != len(model.inputs):
+        raise ValueError(
+            f"The last axis of `x`, {x.shape}, must match the number of "
+            f"inputs of the model, {model.inputs}."
+        )
     if parameters.shape[-1:] != (num_parameter,):
         raise ValueError(
             f"The last axis of `parameters`, {parameters.shape}, must match "
